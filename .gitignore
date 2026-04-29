@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+data/raw/
+data/processed/
+chroma_db/
+
+.pytest_cache/
+.mypy_cache/
+
+flask_ui/*.log

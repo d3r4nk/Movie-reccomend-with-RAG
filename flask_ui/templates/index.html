@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Movie RAG Recommender</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="query-panel">
+        <div class="brand-row">
+          <div>
+            <h1>Movie RAG Recommender</h1>
+          </div>
+          <span class="status-pill" id="status-pill">Ready</span>
+        </div>
+
+        <form id="query-form" class="query-form">
+          <label for="query">Query</label>
+          <textarea
+            id="query"
+            name="query"
+            rows="5"
+            placeholder="Recommend smart action movies with high ratings"
+            required
+          ></textarea>
+
+          <div class="controls-row">
+            <label class="top-k-control" for="top-k">
+              <span>Top K</span>
+              <input id="top-k" name="top-k" type="range" min="1" max="10" value="5">
+              <output id="top-k-value" for="top-k">5</output>
+            </label>
+            <button type="submit" id="submit-button">Recommend</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="answer-panel" aria-live="polite">
+        <div class="section-heading">
+          <h2>Answer</h2>
+        </div>
+        <div id="answer" class="answer-box">Ask for a recommendation to see the generated answer here.</div>
+      </section>
+
+      <section class="results-panel">
+        <div class="section-heading">
+          <h2>Retrieved Chunks</h2>
+          <span id="result-count">0</span>
+        </div>
+        <div id="results" class="results-list"></div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
