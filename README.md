@@ -10,11 +10,26 @@ A local Retrieval-Augmented Generation movie recommender built with an IMDb data
 
 ![System architecture](images/system_architecture.png)
 
+The main runtime components: IMDb preprocessing, local embeddings,
+ChromaDB retrieval, optional query structuring, cross-encoder reranking, LM
+Studio generation, and the Flask/Gradio/CLI entry points.
+
 ![End-to-end flow](images/end_to_end_flow.png)
+
+The full data and query path from raw IMDb CSV files to processed movie
+chunks, vector database build, user query handling, retrieval, reranking, and
+final grounded recommendation response.
 
 ![ChromaDB storage](images/chromadb_storage.png)
 
+Shows how each movie chunk is stored in ChromaDB with generated embeddings,
+document text, chunk IDs, and structured metadata used for filtering.
+
 ![Top-k ChromaDB query](images/topk_chromadb_query.png)
+
+The retrieval path where a user query is embedded, filtered with ChromaDB
+metadata constraints when available, ranked by vector distance, and expanded to
+a wider candidate set before reranking.
 
 ## Structure
 
