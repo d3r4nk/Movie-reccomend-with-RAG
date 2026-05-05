@@ -14,7 +14,6 @@ import re
 from pathlib import Path
 
 import pandas as pd
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 RAW_FILENAMES = ("IMDb_Dataset.csv", "IMDb_Dataset_2.csv", "IMDb_Dataset_3.csv")
@@ -30,16 +29,11 @@ CLEANED_COLUMNS = [
     "Poster-src",
     "Genres",
 ]
-
-
 def combine_genres(row: pd.Series) -> str:
     genres = [row.get("Genre"), row.get("Second_Genre"), row.get("Third_Genre")]
     genres = [g for g in genres if pd.notnull(g) and str(g).strip() != ""]
     return ", ".join(str(g).strip() for g in genres)
-
-
 def add_delimiters(name_string: str) -> str:
-    """Match the original repo's Star Cast delimiter cleanup."""
     if pd.isna(name_string):
         return name_string
 
@@ -64,9 +58,7 @@ def add_delimiters(name_string: str) -> str:
 
     return re.sub(r",+", ",", split_names)
 
-
 def merge_raw_files(raw_dir: str | Path) -> pd.DataFrame:
-    """Merge Kaggle CSVs using the original update-by-title behavior."""
     raw_path = Path(raw_dir)
     composite_df = pd.DataFrame()
 
@@ -99,17 +91,13 @@ def merge_raw_files(raw_dir: str | Path) -> pd.DataFrame:
 
 
 def clean_composite(composite_df: pd.DataFrame) -> pd.DataFrame:
-    """Apply the same missing-value, genre rollup, and cast cleanup rules."""
     df = composite_df.copy()
-
     df["Poster-src"] = df["Poster-src"].fillna("No Poster Available")
     df["Second_Genre"] = df["Second_Genre"].fillna("")
     df["Third_Genre"] = df["Third_Genre"].fillna("")
-
     df["Genres"] = df.apply(combine_genres, axis=1)
     df = df.drop(columns=["Genre", "Second_Genre", "Third_Genre"])
     df["Star Cast"] = df["Star Cast"].apply(add_delimiters)
-
     return df[CLEANED_COLUMNS]
 
 
@@ -121,7 +109,6 @@ def format_star_cast_for_description(star_cast: str) -> str:
 
 
 def generate_description(row: pd.Series) -> str:
-    """Generate the same description text shape as the original repo."""
     return (
         f"{row['Title']} ({int(row['Year'])}) is a {str(row['Genres']).lower()} "
         f"film directed by {row['Director']}. "
@@ -135,43 +122,93 @@ def generate_description(row: pd.Series) -> str:
 
 def create_descriptions(cleaned_df: pd.DataFrame) -> pd.DataFrame:
     records = [
-        {"Title": row["Title"], "Description": generate_description(row)}
+        {
+            "Title": row["Title"],
+            "Description": generate_description(row),
+            "IMDb Rating": row["IMDb Rating"],
+            "Year": row["Year"],
+            "Certificates": row["Certificates"],
+            "Director": row["Director"],
+            "Star Cast": row["Star Cast"],
+            "MetaScore": row["MetaScore"],
+            "Duration (minutes)": row["Duration (minutes)"],
+            "Genres": row["Genres"],
+        }
         for _, row in cleaned_df.iterrows()
     ]
     return pd.DataFrame(records)
 
 
+def movie_metadata(row: pd.Series) -> dict[str, object]:
+    genres = [genre.strip() for genre in str(row.get("Genres", "")).split(",") if genre.strip()]
+    actors = [actor.strip() for actor in str(row.get("Star Cast", "")).split(",") if actor.strip()]
+
+    def text_value(name: str) -> str:
+        value = row.get(name, "")
+        return "" if pd.isna(value) else str(value)
+
+    def float_value(name: str) -> float:
+        value = row.get(name, 0)
+        return 0.0 if pd.isna(value) else float(value)
+
+    def int_value(name: str) -> int:
+        value = row.get(name, 0)
+        return 0 if pd.isna(value) else int(float(value))
+
+    metadata: dict[str, object] = {
+        "Title": text_value("Title"),
+        "IMDb Rating": float_value("IMDb Rating"),
+        "Year": int_value("Year"),
+        "Certificates": text_value("Certificates"),
+        "Director": text_value("Director"),
+        "Star Cast": text_value("Star Cast"),
+        "MetaScore": float_value("MetaScore"),
+        "Duration (minutes)": float_value("Duration (minutes)"),
+        "Genres": text_value("Genres"),
+    }
+
+    for index in range(3):
+        metadata[f"Genre {index + 1}"] = genres[index] if index < len(genres) else ""
+    for index in range(5):
+        metadata[f"Actor {index + 1}"] = actors[index] if index < len(actors) else ""
+
+    return metadata
+
+
 def chunk_descriptions(
     descriptions_df: pd.DataFrame,
-    chunk_size: int = 200,
-    chunk_overlap: int = 20,
+    chunk_size: int | None = None,
+    chunk_overlap: int = 0,
 ) -> pd.DataFrame:
-    """Chunk each movie description by character length, as in RAG-MOVIE-REC."""
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        length_function=len,
-    )
     chunks = []
-
     for _, row in descriptions_df.iterrows():
-        for chunk in splitter.split_text(row["Description"]):
+        description = str(row["Description"])
+        if chunk_size is not None and len(description) > chunk_size:
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                length_function=len,
+            )
+            movie_chunks = splitter.split_text(description)
+        else:
+            movie_chunks = [description]
+
+        for chunk in movie_chunks:
             chunks.append(
                 {
                     "Title": row["Title"],
                     "Chunk": chunk,
-                    "Metadata": {"Title": row["Title"]},
+                    "Metadata": movie_metadata(row),
                 }
             )
-
     return pd.DataFrame(chunks)
-
-
 def preprocess(
     raw_dir: str | Path = "data/raw",
     output_dir: str | Path = "data/processed",
-    chunk_size: int = 200,
-    chunk_overlap: int = 20,
+    chunk_size: int | None = None,
+    chunk_overlap: int = 0,
 ) -> dict[str, Path]:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -212,8 +249,13 @@ def main() -> None:
         default="data/processed",
         help="Directory for processed CSV outputs.",
     )
-    parser.add_argument("--chunk-size", type=int, default=200)
-    parser.add_argument("--chunk-overlap", type=int, default=20)
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=None,
+        help="Optional character chunk size. Defaults to one chunk per movie.",
+    )
+    parser.add_argument("--chunk-overlap", type=int, default=0)
     args = parser.parse_args()
 
     preprocess(args.raw_dir, args.output_dir, args.chunk_size, args.chunk_overlap)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import math
 from pathlib import Path
 from typing import Any
 
@@ -10,11 +11,7 @@ import chromadb
 import pandas as pd
 
 from .embeddings import LocalEmbeddingProvider
-
-
 class MovieChromaStore:
-    """Persistent ChromaDB store for movie description chunks."""
-
     def __init__(
         self,
         persist_path: str = "chroma_db",
@@ -31,7 +28,23 @@ class MovieChromaStore:
         )
 
     @staticmethod
-    def _parse_metadata(value: Any, title: str) -> dict[str, str]:
+    @staticmethod
+    def _metadata_value(value: Any) -> str | int | float | bool:
+        if value is None:
+            return ""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float):
+            return 0.0 if math.isnan(value) else value
+        text = str(value).strip()
+        if text.lower() in {"nan", "none", "null"}:
+            return ""
+        return text
+
+    @classmethod
+    def _parse_metadata(cls, value: Any, title: str) -> dict[str, str | int | float | bool]:
         if isinstance(value, dict):
             metadata = value
         elif isinstance(value, str):
@@ -42,7 +55,13 @@ class MovieChromaStore:
         else:
             metadata = {"Title": title}
 
-        return {"Title": str(metadata.get("Title", title))}
+        parsed = {
+            str(key): cls._metadata_value(item)
+            for key, item in metadata.items()
+            if isinstance(item, (str, int, float, bool)) or item is None
+        }
+        parsed["Title"] = str(parsed.get("Title") or title)
+        return parsed
 
     def reset_collection(self) -> None:
         try:
@@ -60,7 +79,6 @@ class MovieChromaStore:
         batch_size: int = 128,
         reset: bool = True,
     ) -> None:
-        """Embed chunk rows and persist them in ChromaDB."""
         if reset:
             self.reset_collection()
 
@@ -89,14 +107,21 @@ class MovieChromaStore:
             )
             print(f"Indexed {min(start + batch_size, total)}/{total} chunks")
 
-    def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        """Search ChromaDB for the most relevant movie chunks."""
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+        where: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         query_embedding = self.embedding_provider.encode([query])[0]
-        response = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        query_args: dict[str, Any] = {
+            "query_embeddings": [query_embedding],
+            "n_results": top_k,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where:
+            query_args["where"] = where
+        response = self.collection.query(**query_args)
 
         results = []
         docs = response.get("documents", [[]])[0]
