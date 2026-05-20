@@ -38,8 +38,13 @@ CERTIFICATES = ["G", "PG", "PG-13", "R", "NC-17", "TV-G", "TV-PG", "TV-14", "TV-
 
 @dataclass
 class StructuredMovieQuery:
+    """Biểu diễn query người dùng thành ý nghĩa và filter.
+    semantic_query dùng cho vector search. Các trường như genres, year_min,
+    rating_min, actors dùng làm metadata filter trong ChromaDB.
+    """
     semantic_query: str
     genres: list[str]
+    actors: list[str] | None = None
     year_min: int | None = None
     year_max: int | None = None
     rating_min: float | None = None
@@ -49,10 +54,12 @@ class StructuredMovieQuery:
     certificates: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Chuyển dataclass thành dict de log, debug, va tra ve qua API."""
         return asdict(self)
 
 
 def _json_object(raw: str) -> dict[str, Any]:
+    """Lấy object JSON từ text LLM trả về, ke ca khi text co phan thua."""
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -64,6 +71,7 @@ def _json_object(raw: str) -> dict[str, Any]:
 
 
 def _number(value: Any) -> float | None:
+    """Doi gia tri bat ky thanh float neu hop le, nguoc lai tra None."""
     try:
         if value is None or value == "":
             return None
@@ -73,11 +81,13 @@ def _number(value: Any) -> float | None:
 
 
 def _int(value: Any) -> int | None:
+    """Doi gia tri thanh int sau khi doc duoc dang so."""
     number = _number(value)
     return None if number is None else int(number)
 
 
 def _clean_genres(values: Any) -> list[str]:
+    """Giu lai chi cac genre hop le de filter khong bi sai ten cot."""
     if not isinstance(values, list):
         return []
     valid = {genre.casefold(): genre for genre in GENRES}
@@ -90,6 +100,7 @@ def _clean_genres(values: Any) -> list[str]:
 
 
 def _clean_certificates(values: Any) -> list[str]:
+    """Giu lai chi cac certificate hop le nhu G, PG, PG-13, R."""
     if not isinstance(values, list):
         return []
     valid = {cert.casefold(): cert for cert in CERTIFICATES}
@@ -101,16 +112,39 @@ def _clean_certificates(values: Any) -> list[str]:
     return cleaned
 
 
+def _clean_actors(values: Any) -> list[str]:
+    """Chuan hoa actor names do LLM/heuristic trich xuat de dung filter."""
+    if not isinstance(values, list):
+        return []
+    cleaned = []
+    for value in values:
+        actor = " ".join(str(value).strip().split())
+        if not actor:
+            continue
+        if actor.casefold() in {item.casefold() for item in cleaned}:
+            continue
+        cleaned.append(actor)
+    return cleaned
+
+
 class MovieQueryStructurer:
+    """Tach query phim thanh semantic query va metadata constraints.
+
+    Buoc nay giup RAG khong chi tim bang embedding, ma con loc theo nam,
+    genre, rating, thoi luong, va certificate neu nguoi dung noi ro.
+    """
+
     def __init__(
         self,
         llm: ChatOpenAI | None = None,
         enable_llm: bool = True,
     ):
+        """Nhan LLM tuy chon; neu tat LLM thi chi dung heuristic parser."""
         self.llm = llm
         self.enable_llm = enable_llm
 
     def structure(self, query: str) -> StructuredMovieQuery:
+        """Chuyen query tu nhien thanh cau truc filter ket hop heuristic va LLM."""
         heuristic = self._heuristic(query)
         if not self.enable_llm or self.llm is None:
             return heuristic
@@ -123,6 +157,7 @@ class MovieQueryStructurer:
         return self._merge(heuristic, llm_structured)
 
     def to_chroma_where(self, structured: StructuredMovieQuery) -> dict[str, Any] | None:
+        """Biến StructuredMovieQuery thành cú pháp where của ChromaDB."""
         conditions: list[dict[str, Any]] = []
 
         for genre in structured.genres:
@@ -132,6 +167,19 @@ class MovieQueryStructurer:
                         {"Genre 1": {"$eq": genre}},
                         {"Genre 2": {"$eq": genre}},
                         {"Genre 3": {"$eq": genre}},
+                    ]
+                }
+            )
+
+        for actor in structured.actors or []:
+            conditions.append(
+                {
+                    "$or": [
+                        {"Actor 1": {"$eq": actor}},
+                        {"Actor 2": {"$eq": actor}},
+                        {"Actor 3": {"$eq": actor}},
+                        {"Actor 4": {"$eq": actor}},
+                        {"Actor 5": {"$eq": actor}},
                     ]
                 }
             )
@@ -168,6 +216,7 @@ class MovieQueryStructurer:
         return {"$and": conditions}
 
     def _llm_structure(self, query: str) -> StructuredMovieQuery:
+        """Hoi LLM de trich xuat constraints ro rang tu query nguoi dung."""
         prompt = {
             "task": "Extract only explicit movie search constraints from an English user query.",
             "rules": [
@@ -176,6 +225,9 @@ class MovieQueryStructurer:
                 "Use null for unknown numeric bounds.",
                 "Use only genres from valid_genres.",
                 "Use only certificates from valid_certificates.",
+                "Put explicitly named actors or cast members in actors.",
+                "Do not put directors, characters, or vague cast-profile descriptions in actors.",
+                "Preserve actor name capitalization from the query.",
                 "semantic_query should remove numeric/filter-only constraints but keep the user's intent.",
             ],
             "valid_genres": GENRES,
@@ -183,6 +235,7 @@ class MovieQueryStructurer:
             "schema": {
                 "semantic_query": "string",
                 "genres": ["string"],
+                "actors": ["string"],
                 "year_min": "integer|null",
                 "year_max": "integer|null",
                 "rating_min": "number|null",
@@ -198,10 +251,12 @@ class MovieQueryStructurer:
         return self._from_dict(query, parsed)
 
     def _from_dict(self, query: str, data: dict[str, Any]) -> StructuredMovieQuery:
+        """Chuan hoa dict LLM tra ve thanh StructuredMovieQuery an toan."""
         semantic_query = str(data.get("semantic_query") or query).strip() or query
         return StructuredMovieQuery(
             semantic_query=semantic_query,
             genres=_clean_genres(data.get("genres")),
+            actors=_clean_actors(data.get("actors")),
             year_min=_int(data.get("year_min")),
             year_max=_int(data.get("year_max")),
             rating_min=_number(data.get("rating_min")),
@@ -212,8 +267,10 @@ class MovieQueryStructurer:
         )
 
     def _heuristic(self, query: str) -> StructuredMovieQuery:
+        """Dung regex de bat genre, nam, rating, runtime, certificate khong can LLM."""
         lowered = query.casefold()
         genres = [genre for genre in GENRES if re.search(rf"\b{re.escape(genre.casefold())}\b", lowered)]
+        actors = self._heuristic_actors(query)
         certificates = []
         for cert in sorted(CERTIFICATES, key=len, reverse=True):
             if re.search(rf"(?<![\w-]){re.escape(cert.casefold())}(?![\w-])", lowered):
@@ -269,6 +326,7 @@ class MovieQueryStructurer:
         return StructuredMovieQuery(
             semantic_query=semantic_query,
             genres=genres,
+            actors=actors,
             year_min=year_min,
             year_max=year_max,
             rating_min=rating_min,
@@ -278,14 +336,34 @@ class MovieQueryStructurer:
             certificates=certificates,
         )
 
+    @staticmethod
+    def _heuristic_actors(query: str) -> list[str]:
+        """Bat actor/cast names ro rang """
+        name = r"[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){1,4}"
+        stop = r"(?=\s+(?:or|and|from|in|with|rated|around|about)\b|[,.;?!]|$)"
+        patterns = [
+            rf"\b(?:featuring|starring)\s+({name}){stop}",
+            rf"\bwith\s+(?:actor|actress|star|cast member)\s+({name}){stop}",
+            rf"\babout\s+({name}){stop}",
+        ]
+        actors = []
+        for pattern in patterns:
+            for match in re.finditer(pattern, query):
+                actor = " ".join(match.group(1).strip().split())
+                if actor.casefold() not in {item.casefold() for item in actors}:
+                    actors.append(actor)
+        return actors
+
     def _merge(
         self,
         heuristic: StructuredMovieQuery,
         llm_structured: StructuredMovieQuery,
     ) -> StructuredMovieQuery:
+        """Hop nhat ket qua LLM va heuristic, uu tien thong tin LLM khi co."""
         return StructuredMovieQuery(
             semantic_query=llm_structured.semantic_query or heuristic.semantic_query,
             genres=llm_structured.genres or heuristic.genres,
+            actors=llm_structured.actors or heuristic.actors,
             year_min=llm_structured.year_min if llm_structured.year_min is not None else heuristic.year_min,
             year_max=llm_structured.year_max if llm_structured.year_max is not None else heuristic.year_max,
             rating_min=llm_structured.rating_min if llm_structured.rating_min is not None else heuristic.rating_min,

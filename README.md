@@ -234,7 +234,7 @@ Detailed evaluation documentation is in [`evaluate/README.md`](evaluate/README.m
 Run:
 
 ```powershell
-python -m evaluate.run_evaluation --sample-size 14 --top-k 5
+python -m evaluate.run_evaluation --sample-size 70 --top-k 5
 ```
 
 The evaluator creates holdout-derived use cases, runs the RAG pipeline, computes
@@ -245,27 +245,46 @@ OpenAI judge, and writes outputs under:
 evaluate/results/<run-id>/
 ```
 
-The current saved run is `evaluate/results/20260505-130313/`. Its
+The current saved run is `evaluate/results/20260520-101336/`. Its
 `summary.json` reports:
 
 | Metric | Value |
 | --- | --- |
-| `case_count` | `14` |
-| `rag_score` | `0.838095238095238` |
-| `pass_rate` | `0.6428571428571429` |
+| `run_id` | `20260520-101336` |
+| `case_count` | `70` |
+| `pass_count` | `51` |
+| `fail_count` | `19` |
+| `rag_score` | `0.8785714285714286` |
+| `pass_rate` | `0.7285714285714285` |
 | `retrieval_hit_rate` | `0.8571428571428571` |
-| `retrieval_top1_rate` | `0.8571428571428571` |
-| `mean_context_precision` | `0.8285714285714285` |
-| `mean_context_recall` | `0.7857142857142857` |
-| `hallucination_rate` | `0.21428571428571427` |
-| `metadata_filter_applied_rate` | `0.7857142857142857` |
+| `retrieval_top1_rate` | `0.8285714285714286` |
+| `mean_reciprocal_rank` | `0.8385714285714286` |
+| `mean_context_precision` | `0.8171428571428572` |
+| `mean_context_recall` | `0.8571428571428571` |
+| `mean_accuracy_ratio` | `0.9085714285714286` |
+| `mean_faithfulness_ratio` | `0.9142857142857143` |
+| `mean_answer_relevance_ratio` | `0.917142857142857` |
+| `mean_context_relevance_ratio` | `0.8571428571428571` |
+| `hallucination_rate` | `0.11428571428571428` |
+| `wrong_context_rate` | `0.04285714285714286` |
+| `metadata_filter_applied_rate` | `0.8428571428571429` |
+| `generation_error_count` | `0` |
+| `judge_error_count` | `0` |
 
 `mean_context_precision` is normalized semantic context precision from the
 judge score `semantic_context_precision / 5`. It is not exact-title retrieval
 precision. Exact-title precision is written per case as `exact_title_precision`
 in `results.csv`.
 
-![Evaluation dashboard](evaluate/results/20260505-130313/dashboard.png)
+Saved run notes:
+
+- The 70 cases are evenly distributed across seven use-case groups: 10 each for `actor_genre`, `director_year`, `duration_certificate`, `genre_rating`, `multi_constraint`, `out_of_scope`, and `vague_preference`.
+- The run passes 51 of 70 cases. By group, `director_year` passes 10/10, `genre_rating` passes 9/10, `vague_preference` passes 9/10, `actor_genre` passes 8/10, `multi_constraint` passes 8/10, `duration_certificate` passes 7/10, and `out_of_scope` passes 0/10.
+- Retrieval remains strong semantically: `retrieval_hit_rate` is 85.7%, `retrieval_top1_rate` is 82.9%, and `mean_reciprocal_rank` is 83.9%.
+- Generation quality is high on normalized judge scores: accuracy 90.9%, faithfulness 91.4%, answer relevance 91.7%, and context relevance 85.7%.
+- The main recorded risks are hallucination at 11.4% and wrong context at 4.3%. No generation or judge errors are recorded in `summary.json`.
+
+![Evaluation dashboard](evaluate/results/20260520-101336/dashboard.png)
 
 ## Notes
 

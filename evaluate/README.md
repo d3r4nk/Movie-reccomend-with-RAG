@@ -5,7 +5,7 @@ This folder evaluates the movie RAG pipeline implemented in `rag/`.
 ## Run
 
 ```powershell
-python -m evaluate.run_evaluation --sample-size 14 --top-k 5
+python -m evaluate.run_evaluation --sample-size 70 --top-k 5
 ```
 
 The evaluator reads `OPENAI_API_KEY` from the environment or from `.env`.
@@ -142,28 +142,46 @@ evaluate/results/<run-id>/
 | `metric_bars.png` | Bar chart for selected aggregate metrics. |
 | `cases.png` | Per-case visual table. |
 
-## Saved Run: `20260505-130313`
+## Saved Run: `20260520-101336`
 
-The saved run at `evaluate/results/20260505-130313/summary.json` contains:
+The saved run at `evaluate/results/20260520-101336/summary.json` contains:
 
 | Field | Value |
 | --- | --- |
-| `case_count` | `14` |
+| `case_count` | `70` |
 | `top_k` | `5` |
 | `rag_llm_model` | `qwen2.5-7b-instruct` |
 | `embedding_model` | `sentence-transformers/all-mpnet-base-v2` |
 | `reranker_model` | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | `openai_judge_model` | `gpt-5.5` |
-| `rag_score` | `0.838095238095238` |
-| `pass_rate` | `0.6428571428571429` |
+| `pass_count` | `51` |
+| `fail_count` | `19` |
+| `rag_score` | `0.8785714285714286` |
+| `pass_rate` | `0.7285714285714285` |
 | `retrieval_hit_rate` | `0.8571428571428571` |
-| `retrieval_top1_rate` | `0.8571428571428571` |
-| `mean_context_precision` | `0.8285714285714285` |
-| `mean_context_recall` | `0.7857142857142857` |
-| `hallucination_rate` | `0.21428571428571427` |
-| `metadata_filter_applied_rate` | `0.7857142857142857` |
+| `retrieval_top1_rate` | `0.8285714285714286` |
+| `mean_reciprocal_rank` | `0.8385714285714286` |
+| `mean_context_precision` | `0.8171428571428572` |
+| `mean_context_recall` | `0.8571428571428571` |
+| `mean_accuracy_ratio` | `0.9085714285714286` |
+| `mean_faithfulness_ratio` | `0.9142857142857143` |
+| `mean_answer_relevance_ratio` | `0.917142857142857` |
+| `mean_context_relevance_ratio` | `0.8571428571428571` |
+| `hallucination_rate` | `0.11428571428571428` |
+| `wrong_context_rate` | `0.04285714285714286` |
+| `metadata_filter_applied_rate` | `0.8428571428571429` |
+| `generation_error_count` | `0` |
+| `judge_error_count` | `0` |
 
-![Evaluation dashboard](results/20260505-130313/dashboard.png)
+Saved run notes:
+
+- The 70 cases are evenly distributed across seven use-case groups: 10 each for `actor_genre`, `director_year`, `duration_certificate`, `genre_rating`, `multi_constraint`, `out_of_scope`, and `vague_preference`.
+- The run passes 51 of 70 cases. By group, `director_year` passes 10/10, `genre_rating` passes 9/10, `vague_preference` passes 9/10, `actor_genre` passes 8/10, `multi_constraint` passes 8/10, `duration_certificate` passes 7/10, and `out_of_scope` passes 0/10.
+- Retrieval remains strong semantically: `retrieval_hit_rate` is 85.7%, `retrieval_top1_rate` is 82.9%, and `mean_reciprocal_rank` is 83.9%.
+- Generation quality is high on normalized judge scores: accuracy 90.9%, faithfulness 91.4%, answer relevance 91.7%, and context relevance 85.7%.
+- The main recorded risks are hallucination at 11.4% and wrong context at 4.3%. No generation or judge errors are recorded in `summary.json`.
+
+![Evaluation dashboard](results/20260520-101336/dashboard.png)
 
 ## Project Images
 
